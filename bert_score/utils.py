@@ -14,7 +14,7 @@ from transformers import (AutoModel, AutoTokenizer, BertConfig, GPT2Tokenizer, R
                           RobertaConfig, XLMConfig, XLNetConfig)
 from transformers import __version__ as trans_version
 
-from . import __version__
+from bert_score import __version__
 
 __all__ = []
 
@@ -344,17 +344,58 @@ def padding(arr, pad_token, dtype=torch.long):
         mask[i, : lens[i]] = 1
     return padded, lens, mask
 
+######################## CHANGES START
+
+from collections import OrderedDict
+
+# Initialize the global cache as an OrderedDict
+cache = OrderedDict()
+
+def tensor_to_tuple(tensor):
+    """
+    Convert a tensor to a tuple so it can be used as a dictionary key.
+    """
+    return tuple(tensor.view(-1).tolist())
+
+def update_cache(key, value):
+    """
+    Update the cache with the new key-value pair and remove the least used item if the cache exceeds its size limit.
+    """
+    global cache
+    cache.pop(key, None)
+    cache[key] = value
+    if len(cache) > 10:
+        cache.popitem(last=False)  # Remove the least recently used (oldest) item
 
 def bert_encode(model, x, attention_mask, all_layers=False):
+    global cache
+
+    # Convert the input tensor to a hashable form
+    hashable_x = tensor_to_tuple(x)
+
+    # Check if the result is in cache and return it if found
+    if hashable_x in cache:
+        # print('Used Cache')
+        # print(len(cache.keys()))
+        # Move the recently accessed item to the end to mark it as recently used
+        cache.move_to_end(hashable_x)
+        return cache[hashable_x]
+
     model.eval()
     with torch.no_grad():
         out = model(x, attention_mask=attention_mask, output_hidden_states=all_layers)
+
     if all_layers:
         emb = torch.stack(out[-1], dim=2)
     else:
         emb = out[0]
+
+    # Update the cache with the new result
+    update_cache(hashable_x, emb)
+
     return emb
 
+####################### CHANGES END
 
 def process(a, tokenizer=None):
     if tokenizer is not None:
@@ -445,9 +486,12 @@ def get_bert_embedding(
     padded_sens, padded_idf, lens, mask = collate_idf(
         all_sens, tokenizer, idf_dict, device=device
     )
-
+    
     if batch_size == -1:
         batch_size = len(all_sens)
+
+    # print(f'padded_sens len:{len(padded_sens)}')
+    # print(f'batch_size: {batch_size}')
 
     embeddings = []
     with torch.no_grad():

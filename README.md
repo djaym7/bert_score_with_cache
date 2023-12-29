@@ -1,3 +1,7 @@
+To use cache, use batch_size=1. Current cache size is 10. Edit size it in bert_score.utils manually. or maybe add an env param.
+_,_,F = bertscore.score([input],[eg],batch_size=1)
+
+
 # BERTScore
 [![made-with-python](https://img.shields.io/badge/Made%20with-Python-red.svg)](#python)
 [![arxiv](https://img.shields.io/badge/arXiv-1904.09675-b31b1b.svg)](https://arxiv.org/abs/1904.09675)
